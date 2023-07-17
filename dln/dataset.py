@@ -202,6 +202,35 @@ class Dataset:
             for idx in indices[1250:]:
                 self.dataset["test"]["sentence"].append(sentence_list[idx])
                 self.dataset["test"]["label"].append(label_list[idx])
+        elif "medqa" in self.data_path:
+            def create_set(split="train"):
+                file_path = os.path.join(
+                    self.data_path, "questions", "US", "4_options", f"phrases_no_exclude_{split}.jsonl"
+                )
+                sentence_list, label_list = [], []
+                with open(file_path) as fin:
+                    lines = fin.readlines()
+                    for i in range(len(lines)):
+                        data = json.loads(lines[i])
+                        sentence, label = data["question"], data["answer_idx"]
+                        if self.append_options:
+                            sentence = [sentence, "Options:"] + [
+                                "- " + k + ": " + v for k, v in data['options'].items()
+                            ]
+                            sentence = "\n".join(sentence)
+                        sentence_list.append(sentence)
+                        label_list.append(label)
+                return zip(sentence_list, label_list)
+            
+            for sentence, label in create_set("train"):
+                self.dataset["train"]["sentence"].append(sentence)
+                self.dataset["train"]["label"].append(label)
+            for sentence, label in create_set("dev"):
+                self.dataset["dev"]["sentence"].append(sentence)
+                self.dataset["dev"]["label"].append(label)
+            for sentence, label in create_set("test"):
+                self.dataset["test"]["sentence"].append(sentence)
+                self.dataset["test"]["label"].append(label)
         else:
             raise NotImplementedError
 
@@ -318,6 +347,7 @@ def init_dataset(dataset_id, seed, data_dir):
     ordered_prompt = os.path.join(data_dir, "ordered_prompt")
     leopard = os.path.join(data_dir, "leopard")
     bbh = os.path.join(data_dir, "bbh")
+    medqa = os.path.join(data_dir, "medqa")
     dataset_location = {
         "subj": ordered_prompt,
         "mpqa": ordered_prompt,
@@ -328,12 +358,13 @@ def init_dataset(dataset_id, seed, data_dir):
         "navigate": bbh,
         "date_understanding": bbh,
         "logical_deduction_seven_objects": bbh,
+        "medus": medqa,
     }
 
     assert dataset_id in dataset_location, f"Dataset {dataset_id} not found"
 
     dataset = Dataset(dataset_location[dataset_id], dataset_id, seed)
-    val_examples = {"hyperbaton": 300}.get(dataset_id, -1)
+    val_examples = {"hyperbaton": 300, "medus": 300}.get(dataset_id, -1)
     protos = {
         "hyperbaton": ["a|A", "b|B"],
         "navigate": ["yes|Yes", "no|No"],
@@ -347,6 +378,13 @@ def init_dataset(dataset_id, seed, data_dir):
             "f|F",
             "g|G",
         ],
+        "medus": [
+            "a|A",
+            "b|B",
+            "c|C",
+            "d|D",
+            "e|E",
+        ]
     }.get(dataset_id, list(dataset.label_mapping.values()))
     output_classes = OutputClasses(protos=protos)
     return dataset, output_classes, val_examples
