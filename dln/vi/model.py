@@ -3,7 +3,8 @@ from collections import Counter
 import numpy as np
 from termcolor import colored
 
-from dln.loss import LLoss
+from dln.loss import LLoss, ZeroOneLoss
+from dln.postprocessing import postprocess_prediction
 from dln.score import OutputClasses
 from dln.vi.layers import PriorLayer, ResidualPriorLayer
 from dln.vi.sampler import PosteriorSampler, PromptSampler
@@ -139,6 +140,7 @@ class VILModel:
         y: np.array,
         y_hat: np.array,
         losses: np.array,
+        logprobs=False,
     ):
         batch_size = y.shape[0]
 
@@ -160,6 +162,19 @@ class VILModel:
         for i in range(x.shape[0]):
             for k in range(p_tilde_2.shape[0]):
                 evals.append((x[i], y[i], p_tilde_2[k]))
+
+        if not logprobs:
+            outputs = np.array(self.encoder_l2.forward(
+                inputs=np.array([eval[0] for eval in evals]),
+                output_classes=self.output_classes,
+            ))
+
+            gt = np.array([eval[1] for eval in evals])
+            loss = ZeroOneLoss(postprocess_prediction)
+            losses = loss(outputs, gt).reshape(batch_size, p_tilde_2.shape[0])
+            best_p2_idx = np.argmax(losses.mean(axis=0))
+            best_p2 = p_tilde_2[best_p2_idx]
+            return 0., None, best_p2,
 
         # batch_size, num_p_samples
         ll = self.encoder_l2.log_p(

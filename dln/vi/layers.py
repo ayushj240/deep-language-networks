@@ -26,6 +26,7 @@ class PriorLayer:
         temperature=0.0,
         strip_double_newlines=True,
         max_tokens=256,
+        logprobs=False,
     ) -> np.array:
         """Forward pass throught this layer.
 
@@ -36,7 +37,7 @@ class PriorLayer:
             strip_double_newlines: if True, strip any "\n\n" that might have been added
             max_tokens: cap the max length for the forward pass
         """
-        if output_classes is None:
+        if output_classes is None or not logprobs:
             tpl_inputs = [
                 self.forward_template.render(input=input, prompt=self.weight)
                 for input in inputs
