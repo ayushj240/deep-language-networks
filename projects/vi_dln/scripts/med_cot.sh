@@ -1,6 +1,6 @@
 set -x  # print commands to terminal
 dataset=medus
-data_path=../../data/medqa
+data_path=../../data/medus
 p_class_tpl="classify_forward:3.0"
 iters=20
 batch_size=10
