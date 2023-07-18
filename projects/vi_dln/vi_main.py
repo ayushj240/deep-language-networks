@@ -127,6 +127,7 @@ def test(dataset, model, loss_fn, iteration, writer):
 @click.option("--num_h_samples", type=int, default=3)
 @click.option("--tolerance", type=int, default=-1)
 @click.option("--scoring_function", type=str, default="logprobs")
+@click.option("--hidden_scoring_function", type=str, default="logprobs")
 @click.option(
     "--strip_options_for_hidden",
     type=bool,
@@ -274,6 +275,7 @@ def main(
     init_p2,
     tolerance,
     scoring_function,
+    hidden_scoring_function,
     forward_use_classes,
     held_out_prompt_ranking,
     train_p1,
@@ -351,10 +353,11 @@ def main(
         train_p2=train_p2,
         logp_penalty=logp_penalty,
         p1_max_tokens=256,
-        p2_max_tokens=20,
+        p2_max_tokens=10,
         posterior_temp=posterior_temp,
         strip_prefix_for_hidden=dataset.prefix if strip_prefix_for_hidden else None,
         scoring_function=scoring_function,
+        hidden_scoring_function=hidden_scoring_function,
     )
 
     running_acc = 0.0

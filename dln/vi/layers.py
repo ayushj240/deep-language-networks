@@ -1,6 +1,7 @@
 from typing import List
 
 import numpy as np
+from dln.loss import ZeroOneLoss
 
 from dln.operator import forward_evaluate
 from dln.score import LogProbs, LogProbsScore, OutputClasses, ScoreRequest
@@ -68,6 +69,38 @@ class PriorLayer:
         # build up a set of score requests
         context = self.forward_template.render(input=input, prompt=prompt)
         return ScoreRequest(context=context, target=target, payload=target)
+
+    def accuracy(
+        self,
+        inputs: List[str],
+        targets: List[str],
+        prompts=None,
+        num_samples=1,
+        max_tokens=256,
+        postprocess_prediction=None,
+    ) -> LogProbs:
+        requests = []
+
+        if prompts is None:
+            prompts = [self.weight for _ in inputs]
+
+        for _ in range(num_samples):
+            for input, _, prompt in zip(inputs, targets, prompts):
+                requests.append(self.forward_template.render(input=input, prompt=prompt))
+
+        # build up a set of score requests
+        outputs = forward_evaluate(
+            requests,
+            stop=self.forward_template.stop_tokens,
+            temperature=1.0 if num_samples > 1 else 0.,
+            max_tokens=max_tokens,
+        )
+        targets = np.array([t for t in targets] * num_samples)
+
+        loss = ZeroOneLoss(postprocess_prediction)
+        losses = loss(outputs, targets).reshape(-1, num_samples)
+        accuracy = (1. - losses).mean(1)
+        return accuracy
 
     def log_p(
         self,

@@ -203,9 +203,14 @@ class Dataset:
                 self.dataset["test"]["sentence"].append(sentence_list[idx])
                 self.dataset["test"]["label"].append(label_list[idx])
         elif "medus" in self.data_path:
+
             def create_set(split="train"):
                 file_path = os.path.join(
-                    self.data_path, "questions", "US", "4_options", f"phrases_no_exclude_{split}.jsonl"
+                    self.data_path,
+                    "questions",
+                    "US",
+                    "4_options",
+                    f"phrases_no_exclude_{split}.jsonl",
                 )
                 sentence_list, label_list = [], []
                 with open(file_path) as fin:
@@ -214,14 +219,15 @@ class Dataset:
                         data = json.loads(lines[i])
                         sentence, label = data["question"], data["answer_idx"]
                         if self.append_options:
-                            sentence = [sentence, "Options:"] + [
-                                "- " + k + ": " + v for k, v in data['options'].items()
+                            sentence = [sentence.rstrip('"').strip(), "Options:"] + [
+                                k + ". " + v.rstrip('"').strip()
+                                for k, v in data["options"].items()
                             ]
                             sentence = "\n".join(sentence)
                         sentence_list.append(sentence)
                         label_list.append(label)
                 return zip(sentence_list, label_list)
-            
+
             for sentence, label in create_set("train"):
                 self.dataset["train"]["sentence"].append(sentence)
                 self.dataset["train"]["label"].append(label)
@@ -384,7 +390,7 @@ def init_dataset(dataset_id, seed, data_dir):
             "c|C",
             "d|D",
             "e|E",
-        ]
+        ],
     }.get(dataset_id, list(dataset.label_mapping.values()))
     output_classes = OutputClasses(protos=protos)
     return dataset, output_classes, val_examples

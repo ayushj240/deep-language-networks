@@ -11,12 +11,13 @@ use_memory=2
 tolerance=2
 num_h_samples=5
 q_prompt_tpl="q_action_prompt:v3.5"
-logp_penalty=2.
+logp_penalty=0.
 posterior_temp=1.
 trust_factor=5.
 p_hidden_tpl="suffix_forward_tbs"
 q_hidden_tpl="suffix_forward_tbs_y|suffix_forward_tbs"
-scoring_function="logprobs"
+scoring_function="accuracy"
+hidden_scoring_function="tfidf"
 model_type="text-davinci-003"
 
 
@@ -53,5 +54,6 @@ for seed in 13; do
         --strip_options_for_hidden False \
         --strip_prefix_for_hidden False \
         --scoring_function ${scoring_function} \
+        --hidden_scoring_function ${hidden_scoring_function} \
         --model_type ${model_type}
 done

@@ -4,6 +4,7 @@ import asyncio
 import numpy as np
 import openai
 import logging
+import os
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -23,10 +24,13 @@ class GPT:
         "text-curie-001",
         "text-babbage-001",
         "text-ada-001",
+        "gpt-35-turbo",
         "gpt-3.5-turbo",
         "gpt-3.5-turbo-0613",
         "gpt-4-0613",
+        "gpt-4-0314",
         "gpt-4-32k",
+        "gpt-4",
     ]
 
     def __init__(self, model_name="text-davinci-003", **generation_options):
@@ -36,6 +40,7 @@ class GPT:
             )
         self.generation_options = generation_options
         self.engine = model_name
+        openai.api_version = os.environ.get('OPENAI_API_VERSION')
 
     @retry(
         reraise=True,
@@ -215,7 +220,7 @@ class GPT:
         generation_options = self.generation_options.copy()
         generation_options.update(**kwargs)
 
-        if self.engine in ("gpt-3.5-turbo", "gpt-4", "gpt-4-0613", "gpt-4-32k", "gpt-3.5-turbo-0613"):
+        if self.engine in ("gpt-3.5-turbo", "gpt-35-turbo", "gpt-4", "gpt-4-0613", "gpt-4-32k", "gpt-4-0314", "gpt-3.5-turbo-0613"):
             if "return_logprobs" in generation_options:
                 del generation_options["return_logprobs"]
 

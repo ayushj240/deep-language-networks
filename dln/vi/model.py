@@ -16,7 +16,7 @@ class VILModel:
         self,
         loss_fn: LLoss,
         task_description: str,
-        two_layers=True,
+        two_layers = True,
         num_h_samples: int = 3,
         num_p_samples: int = 5,
         use_h_argmax: bool = False,
@@ -40,7 +40,8 @@ class VILModel:
         p2_max_tokens: int = 20,
         posterior_temp: float = 1.0,
         strip_prefix_for_hidden: str = None,
-        scoring_function="logprobs",
+        scoring_function = "logprobs",
+        hidden_scoring_function = "logprobs",
     ):
         """
         Args:
@@ -110,7 +111,8 @@ class VILModel:
         self.num_p2_steps = 1
         self.num_p1_steps = 1
         self.scoring_function = scoring_function
-        self.num_acc_mc_samples = 5
+        self.hidden_scoring_function = hidden_scoring_function
+        self.num_acc_mc_samples = 3
 
         if self.forward_use_classes:
             assert (
@@ -194,26 +196,25 @@ class VILModel:
 
             return best_p2_elbo, None, best_p2
         elif self.scoring_function == "accuracy":
-            num_samples = self.num_acc_mc_samples
-            outputs = np.array(self.encoder_l2.forward(
-                inputs=np.array([eval[0] for eval in evals] * num_samples),
-                output_classes=self.output_classes,
-                temperature=1.0,
-            ))
-            gt = np.array([eval[1] for eval in evals] * num_samples)
-            loss = ZeroOneLoss(postprocess_prediction)
+            if np.sum(losses) == 0.:
+                return 1.0, None, self.encoder_l2.weight
 
-            accuracy = np.zeros((batch_size, num_samples, p_tilde_2.shape[0]))
-            losses = loss(outputs, gt).reshape(batch_size, num_samples, p_tilde_2.shape[0])
-            accuracy = (1. - losses)
-            p2_accuracies = accuracy.mean(1).mean(0)
+            acc = self.encoder_l2.accuracy(
+                inputs=np.array([eval[0] for eval in evals]),
+                targets=np.array([eval[1] for eval in evals]),
+                prompts=np.array([eval[2] for eval in evals]),
+                num_samples=self.num_acc_mc_samples,
+                max_tokens=10,
+                postprocess_prediction=postprocess_prediction,
+            )
+            acc = acc.reshape(batch_size, p_tilde_2.shape[0])
 
-            best_p2_idx = np.argmax(p2_accuracies)
+            best_p2_idx = np.argmax(acc)
             best_p2 = p_tilde_2[best_p2_idx]
-            best_p2_acc = np.max(p2_accuracies)
+            best_p2_acc = np.max(acc)
 
             log_message("--- P2 ---")
-            for i, (p_tilde_2_i, p2_acc_i) in enumerate(zip(p_tilde_2, p2_accuracies)):
+            for i, (p_tilde_2_i, p2_acc_i) in enumerate(zip(p_tilde_2, acc)):
                 log_message("#", i, "ACC", p2_acc_i, ",", p_tilde_2_i)
             log_message("----------")
 
@@ -271,36 +272,46 @@ class VILModel:
         if num_h_samples > 1:
             log_message(colored("Tightening posterior approximation...", "yellow"))
             y_repeat = y.repeat(num_h_samples, axis=0)
-            ll = self.encoder_l2.log_p(
-                inputs=residual_h_tilde_1.flatten(),
-                targets=y_repeat.flatten(),
-                output_classes=self.output_classes,
-                agg="sum" if self.forward_use_classes else "max",
-            ).targets
-            ll = ll.reshape(batch_size, num_h_samples)
 
-            if add_prior_term_to_score:
-                # now compute the prior log-prob of ~h, log p(~h | x, p_1)
-                log_message(
-                    colored(
-                        "Scoring posterior samples only with log-likelihood + prior",
-                        "yellow",
+            if self.scoring_function == "logprobs":
+                ll = self.encoder_l2.log_p(
+                    inputs=residual_h_tilde_1.flatten(),
+                    targets=y_repeat.flatten(),
+                    output_classes=self.output_classes,
+                    agg="sum" if self.forward_use_classes else "max",
+                ).targets
+
+                ll = ll.reshape(batch_size, num_h_samples)
+
+                if add_prior_term_to_score:
+                    # now compute the prior log-prob of ~h, log p(~h | x, p_1)
+                    log_message(
+                        colored(
+                            "Scoring posterior samples only with log-likelihood + prior",
+                            "yellow",
+                        )
                     )
-                )
-                pr = self.encoder_l1.log_p(
-                    x_repeat, h_tilde_1.flatten()
-                ).targets.reshape(
-                    batch_size, num_h_samples
-                )
-                logits = pr + ll
-            else:
-                log_message(
-                    colored(
-                        "Scoring posterior samples only with log-likelihood!", "yellow"
+                    pr = self.encoder_l1.log_p(
+                        x_repeat, h_tilde_1.flatten()
+                    ).targets.reshape(
+                        batch_size, num_h_samples
                     )
-                )
-                # we don't need to compute the prior log-prob of ~h
-                logits = ll
+                    logits = pr + ll
+                else:
+                    log_message(
+                        colored(
+                            "Scoring posterior samples only with log-likelihood!", "yellow"
+                        )
+                    )
+                    # we don't need to compute the prior log-prob of ~h
+                    logits = ll
+            elif self.scoring_function == "accuracy":
+                logits = self.encoder_l2.accuracy(
+                    inputs=residual_h_tilde_1.flatten(),
+                    targets=y_repeat.flatten(),
+                    num_samples=self.num_acc_mc_samples,
+                    postprocess_prediction=postprocess_prediction,
+                ).reshape(batch_size, num_h_samples)
         else:
             logits = np.zeros((batch_size, num_h_samples))
 
@@ -400,6 +411,7 @@ class VILModel:
         if self.train_p2:
             current_prompt = self.encoder_l2.weight
             p2_elbos = []
+
             for i in range(self.num_p2_steps):
                 # sample from the prompt distribution, (num_prompts,)
                 p_tilde_2: np.array = self.prompt_sampler.sample_q_p(
@@ -425,35 +437,49 @@ class VILModel:
                                     p_tilde_2[k],
                                 )
                             )
-                # batch_size, num_h_samples, num_p_samples
-                log_message(colored("Evaluating log likelihoods for p2...", "yellow"))
-                ll = self.encoder_l2.log_p(
-                    inputs=np.array([eval[0] for eval in evals]),
-                    targets=np.array([eval[1] for eval in evals]),
-                    prompts=np.array([eval[2] for eval in evals]),
-                    output_classes=self.output_classes,
-                    agg="sum" if self.forward_use_classes else "max",
-                ).targets
-                ll = ll.reshape(eval_batch_size, num_h_samples, p_tilde_2.shape[0])
 
-                if self.trust_factor > 0.0:
-                    evals = []
-                    for i in range(batch_size):
-                        for k in range(p_tilde_2.shape[0]):
-                            evals.append((r_h1[i], y[i], p_tilde_2[k]))
-                    lps = self.encoder_l2.log_p(
+                if self.scoring_function == "logprobs":
+                    # batch_size, num_h_samples, num_p_samples
+                    log_message(colored("Evaluating log likelihoods for p2...", "yellow"))
+                    scores = self.encoder_l2.log_p(
                         inputs=np.array([eval[0] for eval in evals]),
                         targets=np.array([eval[1] for eval in evals]),
                         prompts=np.array([eval[2] for eval in evals]),
                         output_classes=self.output_classes,
                         agg="sum" if self.forward_use_classes else "max",
-                    ).contexts
-                    lps = lps.reshape(batch_size, p_tilde_2.shape[0], -1)
-                    p2_kl = compute_pairwise_kl(lps)
-                else:
+                    ).targets
+                    scores = scores.reshape(eval_batch_size, num_h_samples, p_tilde_2.shape[0])
+
+                    if self.trust_factor > 0.0:
+                        evals = []
+                        for i in range(batch_size):
+                            for k in range(p_tilde_2.shape[0]):
+                                evals.append((r_h1[i], y[i], p_tilde_2[k]))
+
+                        lps = self.encoder_l2.log_p(
+                            inputs=np.array([eval[0] for eval in evals]),
+                            targets=np.array([eval[1] for eval in evals]),
+                            prompts=np.array([eval[2] for eval in evals]),
+                            output_classes=self.output_classes,
+                            agg="sum" if self.forward_use_classes else "max",
+                        ).contexts
+                        lps = lps.reshape(batch_size, p_tilde_2.shape[0], -1)
+                        p2_kl = compute_pairwise_kl(lps)
+                    else:
+                        p2_kl = np.zeros(p_tilde_2.shape[0])
+                elif self.scoring_function == "accuracy":
+                    log_message(colored("Evaluating accuracies for p2...", "yellow"))
+                    scores = self.encoder_l2.accuracy(
+                        inputs=np.array([eval[0] for eval in evals]),
+                        targets=np.array([eval[1] for eval in evals]),
+                        prompts=np.array([eval[2] for eval in evals]),
+                        num_samples=self.num_acc_mc_samples,
+                        postprocess_prediction=postprocess_prediction,
+                    )
+                    scores = scores.reshape(eval_batch_size, num_h_samples, p_tilde_2.shape[0])
                     p2_kl = np.zeros(p_tilde_2.shape[0])
 
-                p2_elbo = self.compute_elbo_score(ll[:, :, :], eval_weights)
+                p2_elbo = self.compute_elbo_score(scores[:, :, :], eval_weights)
                 p2_reward = p2_elbo - self.trust_factor * p2_kl
                 best_p2 = p_tilde_2[np.argmax(p2_reward)]
                 best_p2_elbo = np.max(p2_reward)
@@ -490,41 +516,19 @@ class VILModel:
 
                 # marginalize over all posterior samples
                 # build array: (num_samples, num_h_samples, num_p_samples)
-                evals = []
                 eval_h_tilde_1 = np.concatenate([h1[:, None], eval_h_tilde_1], 1)
-                for i in range(eval_batch_size):
-                    for j in range(num_h_samples + 1):
-                        for k in range(p_tilde_1.shape[0]):
-                            evals.append(
-                                (
-                                    eval_x[i],
-                                    eval_h_tilde_1[i, j], 
-                                    p_tilde_1[k],
-                                )
-                            )
 
-                # (batch_size, num_h_samples, num_p_samples)
-                log_message(colored("Evaluating log likelihoods for p1...", "yellow"))
+                scores = self.score_p1(eval_x, eval_h_tilde_1, p_tilde_1)
+                score_orig = scores[:, 0, :]
 
-                ll = self.encoder_l1.log_p(
-                    inputs=np.array([eval[0] for eval in evals]),
-                    targets=np.array([eval[1] for eval in evals]),
-                    prompts=np.array([eval[2] for eval in evals]),
-                ).targets
-                ll = ll.reshape(
-                    eval_batch_size,
-                    num_h_samples + 1,
-                    p_tilde_1.shape[0],
-                )
-                ll_orig = ll[:, 0, :]
-                p1_elbo = self.compute_elbo_score(ll[:, 1:, :], eval_weights)
+                p1_elbo = self.compute_elbo_score(scores[:, 1:, :], eval_weights)
 
                 # Compute an exploration like logp penalty.
                 if self.logp_penalty > 0.0:
                     error_terms = np.where(losses > 0.0)[0]
 
                     if len(error_terms) > 0:
-                        ll_errors = ll_orig[error_terms]
+                        ll_errors = score_orig[error_terms]
                         p1_elbo = p1_elbo - self.logp_penalty * ll_errors.mean(0)
 
                 best_p1 = p_tilde_1[np.argmax(p1_elbo)]
@@ -555,6 +559,50 @@ class VILModel:
         log_message("Best P1: ", best_p1, best_p1_elbo)
         log_message("Best P2: ", best_p2, best_p2_elbo)
         return best_p1_elbo, best_p2_elbo, best_p1, best_p2
+
+    def score_p1(self, eval_x, eval_h_tilde_1, p_tilde_1):
+        if self.hidden_scoring_function == "logprobs":
+            evals = []
+            for i in range(eval_h_tilde_1.shape[0]):
+                for j in range(eval_h_tilde_1.shape[1]):
+                    for k in range(p_tilde_1.shape[0]):
+                        evals.append(
+                            (
+                                eval_x[i],
+                                eval_h_tilde_1[i, j], 
+                                p_tilde_1[k],
+                            )
+                        )
+            # (batch_size, num_h_samples, num_p_samples)
+            log_message(colored("Evaluating log likelihoods for p1...", "yellow"))
+            scores = self.encoder_l1.log_p(
+                inputs=np.array([eval[0] for eval in evals]),
+                targets=np.array([eval[1] for eval in evals]),
+                prompts=np.array([eval[2] for eval in evals]),
+            ).targets
+            scores = scores.reshape(
+                eval_h_tilde_1.shape[0],
+                eval_h_tilde_1.shape[1],
+                p_tilde_1.shape[0],
+            )
+        elif self.hidden_scoring_function == "tfidf":
+            import sklearn
+            from sklearn.feature_extraction.text import TfidfVectorizer
+
+            log_message(colored("Evaluating tf-idfs for p1...", "yellow"))
+
+            corpus = list(p_tilde_1.flatten()) + list(eval_h_tilde_1.flatten())
+            vectorizer = TfidfVectorizer()
+            X = vectorizer.fit_transform(corpus).toarray()
+
+            p_tilde_1_v = X[:len(p_tilde_1.flatten())]
+            eval_h_tilde_1_v = X[len(p_tilde_1.flatten()):].reshape(eval_h_tilde_1.shape[0] * eval_h_tilde_1.shape[1], -1)
+
+            scores = np.matmul(eval_h_tilde_1_v, p_tilde_1_v.T)
+            scores = scores.reshape(eval_h_tilde_1.shape[0], eval_h_tilde_1.shape[1], -1)
+        else:
+            raise NotImplementedError()
+        return scores
 
     def strip_options(self, x):
         """
