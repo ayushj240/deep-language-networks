@@ -202,7 +202,7 @@ class Dataset:
             for idx in indices[1250:]:
                 self.dataset["test"]["sentence"].append(sentence_list[idx])
                 self.dataset["test"]["label"].append(label_list[idx])
-        elif "medqa" in self.data_path:
+        elif "medus" in self.data_path:
             def create_set(split="train"):
                 file_path = os.path.join(
                     self.data_path, "questions", "US", "4_options", f"phrases_no_exclude_{split}.jsonl"
@@ -347,7 +347,7 @@ def init_dataset(dataset_id, seed, data_dir):
     ordered_prompt = os.path.join(data_dir, "ordered_prompt")
     leopard = os.path.join(data_dir, "leopard")
     bbh = os.path.join(data_dir, "bbh")
-    medqa = os.path.join(data_dir, "medqa")
+    medus = os.path.join(data_dir, "medus")
     dataset_location = {
         "subj": ordered_prompt,
         "mpqa": ordered_prompt,
@@ -358,7 +358,7 @@ def init_dataset(dataset_id, seed, data_dir):
         "navigate": bbh,
         "date_understanding": bbh,
         "logical_deduction_seven_objects": bbh,
-        "medus": medqa,
+        "medus": medus,
     }
 
     assert dataset_id in dataset_location, f"Dataset {dataset_id} not found"

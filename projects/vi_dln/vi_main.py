@@ -126,6 +126,7 @@ def test(dataset, model, loss_fn, iteration, writer):
 @click.option("--num_p_samples", type=int, default=5)
 @click.option("--num_h_samples", type=int, default=3)
 @click.option("--tolerance", type=int, default=-1)
+@click.option("--scoring_function", type=str, default="logprobs")
 @click.option(
     "--strip_options_for_hidden",
     type=bool,
@@ -237,6 +238,11 @@ def test(dataset, model, loss_fn, iteration, writer):
     default=512,
     help="Backward max tokens.",
 )
+@click.option(
+    "--use_wandb",
+    type=bool,
+    default=False,
+)
 def main(
     seed,
     out_dir,
@@ -267,6 +273,7 @@ def main(
     init_p1,
     init_p2,
     tolerance,
+    scoring_function,
     forward_use_classes,
     held_out_prompt_ranking,
     train_p1,
@@ -277,7 +284,11 @@ def main(
     model_type,
     fwd_max_tokens,
     bwd_max_tokens,
+    use_wandb,
 ):
+    global wandb_enabled
+    
+    wandb_enabled = use_wandb and wandb_enabled
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S.%f")
     out_dir = f"{out_dir}/{timestamp}"
     os.makedirs(out_dir, exist_ok=True)
@@ -343,6 +354,7 @@ def main(
         p2_max_tokens=20,
         posterior_temp=posterior_temp,
         strip_prefix_for_hidden=dataset.prefix if strip_prefix_for_hidden else None,
+        scoring_function=scoring_function,
     )
 
     running_acc = 0.0

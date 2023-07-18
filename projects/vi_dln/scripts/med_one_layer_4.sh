@@ -17,7 +17,7 @@ trust_factor=5.
 p_hidden_tpl="suffix_forward_tbs"
 q_hidden_tpl="suffix_forward_tbs_y|suffix_forward_tbs"
 scoring_function="accuracy"
-model_type="text-davinci-003"
+model_type="gpt-4-0613"
 
 
 dir=log/med_one_layer/${dataset}
@@ -25,7 +25,6 @@ dir=log/med_one_layer/${dataset}
 
 for seed in 13; do
     python vi_main.py \
-        --do_first_eval \
         --balance_batch \
         --num_p_samples ${num_p_samples} \
         --num_h_samples ${num_h_samples} \

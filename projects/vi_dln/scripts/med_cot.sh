@@ -20,11 +20,14 @@ scoring_function="accuracy"
 model_type="text-davinci-003"
 
 
-dir=log/med_one_layer/${dataset}
+dir=log/med_cot/${dataset}
 /bin/rm -rf ${dir}
 
 for seed in 13; do
     python vi_main.py \
+        --do_zero_shot \
+        --init_p1 "" \
+        --init_p2 "" \
         --do_first_eval \
         --balance_batch \
         --num_p_samples ${num_p_samples} \
@@ -50,7 +53,6 @@ for seed in 13; do
         --posterior_temp ${posterior_temp} \
         --strip_options_for_hidden True \
         --strip_prefix_for_hidden False \
-        --one_layer \
         --scoring_function ${scoring_function} \
         --model_type ${model_type}
 done

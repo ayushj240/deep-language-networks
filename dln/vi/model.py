@@ -40,6 +40,7 @@ class VILModel:
         p2_max_tokens: int = 20,
         posterior_temp: float = 1.0,
         strip_prefix_for_hidden: str = None,
+        scoring_function="logprobs",
     ):
         """
         Args:
@@ -108,6 +109,8 @@ class VILModel:
         self.posterior_temp = posterior_temp
         self.num_p2_steps = 1
         self.num_p1_steps = 1
+        self.scoring_function = scoring_function
+        self.num_acc_mc_samples = 5
 
         if self.forward_use_classes:
             assert (
@@ -140,7 +143,6 @@ class VILModel:
         y: np.array,
         y_hat: np.array,
         losses: np.array,
-        logprobs=False,
     ):
         batch_size = y.shape[0]
 
@@ -163,42 +165,61 @@ class VILModel:
             for k in range(p_tilde_2.shape[0]):
                 evals.append((x[i], y[i], p_tilde_2[k]))
 
-        if not logprobs:
-            outputs = np.array(self.encoder_l2.forward(
+        log_message("Scoring prompts...")
+
+        if self.scoring_function == "logprobs":
+            # batch_size, num_p_samples
+            ll = self.encoder_l2.log_p(
                 inputs=np.array([eval[0] for eval in evals]),
+                targets=np.array([eval[1] for eval in evals]),
+                prompts=np.array([eval[2] for eval in evals]),
                 output_classes=self.output_classes,
+                agg="sum" if self.forward_use_classes else "max",
+            ).targets
+    
+            # batch_size, num_p_samples
+            ll = ll.reshape(batch_size, p_tilde_2.shape[0])
+
+            p2_elbo = ll.mean(axis=0)
+            best_p2 = p_tilde_2[np.argmax(p2_elbo)]
+            best_p2_elbo = np.max(p2_elbo)
+
+            log_message("--- P2 ---")
+            for i, (p_tilde_2_i, p2_elbo_i) in enumerate(zip(p_tilde_2, p2_elbo)):
+                log_message("#", i, "ELBO", p2_elbo_i, ",", p_tilde_2_i)
+            log_message("----------")
+
+            log_message("Best P2 Index: ", np.argmax(p2_elbo))
+            log_message("Best P2: ", best_p2)
+
+            return best_p2_elbo, None, best_p2
+        elif self.scoring_function == "accuracy":
+            num_samples = self.num_acc_mc_samples
+            outputs = np.array(self.encoder_l2.forward(
+                inputs=np.array([eval[0] for eval in evals] * num_samples),
+                output_classes=self.output_classes,
+                temperature=1.0,
             ))
-
-            gt = np.array([eval[1] for eval in evals])
+            gt = np.array([eval[1] for eval in evals] * num_samples)
             loss = ZeroOneLoss(postprocess_prediction)
-            losses = loss(outputs, gt).reshape(batch_size, p_tilde_2.shape[0])
-            best_p2_idx = np.argmax(losses.mean(axis=0))
+
+            accuracy = np.zeros((batch_size, num_samples, p_tilde_2.shape[0]))
+            losses = loss(outputs, gt).reshape(batch_size, num_samples, p_tilde_2.shape[0])
+            accuracy = (1. - losses)
+            p2_accuracies = accuracy.mean(1).mean(0)
+
+            best_p2_idx = np.argmax(p2_accuracies)
             best_p2 = p_tilde_2[best_p2_idx]
-            return 0., None, best_p2,
+            best_p2_acc = np.max(p2_accuracies)
 
-        # batch_size, num_p_samples
-        ll = self.encoder_l2.log_p(
-            inputs=np.array([eval[0] for eval in evals]),
-            targets=np.array([eval[1] for eval in evals]),
-            prompts=np.array([eval[2] for eval in evals]),
-            output_classes=self.output_classes,
-            agg="sum" if self.forward_use_classes else "max",
-        ).targets
-        # batch_size, num_p_samples
-        ll = ll.reshape(batch_size, p_tilde_2.shape[0])
+            log_message("--- P2 ---")
+            for i, (p_tilde_2_i, p2_acc_i) in enumerate(zip(p_tilde_2, p2_accuracies)):
+                log_message("#", i, "ACC", p2_acc_i, ",", p_tilde_2_i)
+            log_message("----------")
 
-        p2_elbo = ll.mean(axis=0)
-        best_p2 = p_tilde_2[np.argmax(p2_elbo)]
-        best_p2_elbo = np.max(p2_elbo)
-
-        log_message("--- P2 ---")
-        for i, (p_tilde_2_i, p2_elbo_i) in enumerate(zip(p_tilde_2, p2_elbo)):
-            log_message("#", i, "ELBO", p2_elbo_i, ",", p_tilde_2_i)
-        log_message("----------")
-
-        log_message("Best P2 Index: ", np.argmax(p2_elbo))
-        log_message("Best P2: ", best_p2)
-        return best_p2_elbo, None, best_p2
+            log_message("Best P2 Index: ", best_p2_idx)
+            log_message("Best P2: ", best_p2)
+            return best_p2_acc, None, best_p2
 
     def sample_hidden_states(
         self,

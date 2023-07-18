@@ -16,16 +16,18 @@ posterior_temp=1.
 trust_factor=5.
 p_hidden_tpl="suffix_forward_tbs"
 q_hidden_tpl="suffix_forward_tbs_y|suffix_forward_tbs"
-scoring_function="accuracy"
+scoring_function="logprobs"
 model_type="text-davinci-003"
 
 
-dir=log/med_one_layer/${dataset}
+dir=log/med_two_layers/${dataset}
 /bin/rm -rf ${dir}
+
 
 for seed in 13; do
     python vi_main.py \
-        --do_first_eval \
+        --init_p1 "" \
+        --init_p2 "Answer the following medical question." \
         --balance_batch \
         --num_p_samples ${num_p_samples} \
         --num_h_samples ${num_h_samples} \
@@ -48,9 +50,8 @@ for seed in 13; do
         --forward_use_classes True \
         --logp_penalty ${logp_penalty} \
         --posterior_temp ${posterior_temp} \
-        --strip_options_for_hidden True \
+        --strip_options_for_hidden False \
         --strip_prefix_for_hidden False \
-        --one_layer \
         --scoring_function ${scoring_function} \
         --model_type ${model_type}
 done
