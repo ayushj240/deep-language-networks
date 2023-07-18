@@ -19,13 +19,11 @@ q_hidden_tpl="suffix_forward_tbs_y|suffix_forward_tbs"
 scoring_function="accuracy"
 model_type="text-davinci-003"
 
-
 dir=log/med_cot/${dataset}
 /bin/rm -rf ${dir}
 
 for seed in 13; do
     python vi_main.py \
-        --do_zero_shot \
         --init_p1 "" \
         --init_p2 "" \
         --do_first_eval \
@@ -47,12 +45,13 @@ for seed in 13; do
         --held_out_prompt_ranking ${held_out_prompt_ranking} \
         --trust_factor ${trust_factor} \
         --train_p1 True \
-        --train_p2 True \
+        --train_p2 False \
         --forward_use_classes True \
         --logp_penalty ${logp_penalty} \
         --posterior_temp ${posterior_temp} \
         --strip_options_for_hidden True \
         --strip_prefix_for_hidden False \
         --scoring_function ${scoring_function} \
-        --model_type ${model_type}
+        --model_type ${model_type} \
+        --one_layer
 done
