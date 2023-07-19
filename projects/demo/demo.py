@@ -78,8 +78,13 @@ def load_data(log_file, dataset):
         pd.DataFrame(flattened_examples),
     )
 
+def load_dataset_names(log_file):
+    with open(log_file) as f:
+        logs = json.load(f)
+    return [(x, x) for x in list(logs.keys())]
 
 def main(args):
+    DATASETS = load_dataset_names(args.logfile or "result_data.json")
     app = dash.Dash()
     app.layout = html.Div(
         [
@@ -94,7 +99,8 @@ def main(args):
                 options=[
                     {"label": f"{title}", "value": id_} for id_, title in DATASETS
                 ],
-                value="subj",
+                # value="subj",
+                value=DATASETS[0][0],
                 multi=False,
                 style={
                     "backgroundColor": "rgb(229, 236, 246)",
@@ -136,7 +142,7 @@ def main(args):
     )  # coulbe be either clickData, hoverData
     def update_table(callbackData, dataset_dropdown):
         df, candidates, examples = load_data(
-            args.logfile or "data.json", dataset_dropdown
+            args.logfile or "result_data.json", dataset_dropdown
         )
 
         # Merge layers and examples
@@ -155,7 +161,7 @@ def main(args):
     )
     def update_scatter_plot(example_dropdown, dataset_dropdown):
         df, candidates, examples = load_data(
-            args.logfile or "data.json", dataset_dropdown
+            args.logfile or "result_data.json", dataset_dropdown
         )
 
         # Merge layers and examples
