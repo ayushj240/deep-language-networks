@@ -23,8 +23,6 @@ DATASETS = [
     ("subj", "1 Layer - Subj"),
     ("hyperbaton", "1 Layer - Hyperbaton"),
     ("navigate", "2 Layers - Navigate"),
-    # ("navigate-dwich", "2 Layers - Navigate Dwich"),
-    ("navigate-best", "2 Layers - Navigate Best"),
 ]
 
 
@@ -84,7 +82,7 @@ def load_dataset_names(log_file):
     return [(x, x) for x in list(logs.keys())]
 
 def main(args):
-    DATASETS = load_dataset_names(args.logfile or "result_data.json")
+    datasets = load_dataset_names(args.logfile) if args.logfile else DATASETS
     app = dash.Dash()
     app.layout = html.Div(
         [
@@ -97,10 +95,9 @@ def main(args):
             dcc.Dropdown(
                 id="dataset_dropdown",
                 options=[
-                    {"label": f"{title}", "value": id_} for id_, title in DATASETS
+                    {"label": f"{title}", "value": id_} for id_, title in datasets
                 ],
-                # value="subj",
-                value=DATASETS[0][0],
+                value=datasets[0][0] if args.logfile else 'subj',
                 multi=False,
                 style={
                     "backgroundColor": "rgb(229, 236, 246)",
@@ -142,7 +139,7 @@ def main(args):
     )  # coulbe be either clickData, hoverData
     def update_table(callbackData, dataset_dropdown):
         df, candidates, examples = load_data(
-            args.logfile or "result_data.json", dataset_dropdown
+            args.logfile or "data.json", dataset_dropdown
         )
 
         # Merge layers and examples
@@ -161,7 +158,7 @@ def main(args):
     )
     def update_scatter_plot(example_dropdown, dataset_dropdown):
         df, candidates, examples = load_data(
-            args.logfile or "result_data.json", dataset_dropdown
+            args.logfile or "data.json", dataset_dropdown
         )
 
         # Merge layers and examples
@@ -263,10 +260,9 @@ def main(args):
 
         # text = ["Dev Acc"] * len(df["step"][df["dev_acc"] >= 0])
         fig.add_trace(
-            # go.Scatter(x=df["step"][df["dev_acc"]>=0], y=df["dev_acc"][df["dev_acc"]>=0], name="Dev acc", hoverinfo='none'),#, text=text, **hover_config),
             go.Scatter(
                 x=dev_df["step"], y=dev_df["dev_acc"], name="Dev acc", **hover_config
-            ),  # , text=text, **hover_config),
+            ),
             secondary_y=False,
         )
 
@@ -282,9 +278,7 @@ def main(args):
             secondary_y=True,
         )
 
-        # # Add figure title
-        # fig.update_layout()
-        # Set x-axis title
+        # Set x-axes title
         fig.update_xaxes(title_text="steps", nticks=20)
 
         # Set y-axes titles
